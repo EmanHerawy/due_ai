@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  # MCP Server - runs with stdio transport
+  # Clawdbot will spawn this as a background process
+  due-ai-web3-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: due-ai-web3-mcp
+    environment:
+      - NODE_ENV=production
+      - SUI_NETWORK=testnet
+    # stdio transport: stdin/stdout for communication
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    # No ports needed - communication is via stdio
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
