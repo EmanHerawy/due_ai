@@ -1,8 +1,51 @@
 version: '3.8'
 
 services:
-  # MCP Server - runs with stdio transport
-  # Clawdbot will spawn this as a background process
+  # ==========================================================================
+  # OpenClaw Gateway - The main AI agent that connects to messaging platforms
+  # ==========================================================================
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-gateway
+    command: ["openclaw", "gateway", "--port", "18789", "--verbose"]
+    ports:
+      - "18789:18789"  # Gateway API + Dashboard
+    volumes:
+      # OpenClaw config and data
+      - openclaw-config:/home/node/.openclaw
+      - openclaw-workspace:/home/node/.openclaw/workspace
+      # Mount our MCP server for mcporter to access
+      - ./:/home/node/web3-mcp-server:ro
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks:
+      - openclaw-network
+    restart: unless-stopped
+    depends_on:
+      - due-ai-web3-mcp
+
+  # ==========================================================================
+  # OpenClaw CLI - For onboarding and configuration
+  # ==========================================================================
+  openclaw-cli:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-cli
+    volumes:
+      - openclaw-config:/home/node/.openclaw
+      - openclaw-workspace:/home/node/.openclaw/workspace
+      - ./:/home/node/web3-mcp-server:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks:
+      - openclaw-network
+    profiles:
+      - cli  # Only runs when explicitly called
+
+  # ==========================================================================
+  # Due AI Web3 MCP Server - Our custom Sui blockchain tools
+  # ==========================================================================
   due-ai-web3-mcp:
     build:
       context: .
@@ -10,15 +53,18 @@ services:
     container_name: due-ai-web3-mcp
     environment:
       - NODE_ENV=production
-      - SUI_NETWORK=testnet
-    # stdio transport: stdin/stdout for communication
+      - SUI_NETWORK=${SUI_NETWORK:-testnet}
+    # stdio transport - OpenClaw connects via mcporter
     stdin_open: true
     tty: true
-    restart: unless-stopped
-    # No ports needed - communication is via stdio
     networks:
-      - mcp-network
+      - openclaw-network
+    restart: unless-stopped
+
+volumes:
+  openclaw-config:
+  openclaw-workspace:
 
 networks:
-  mcp-network:
+  openclaw-network:
     driver: bridge
