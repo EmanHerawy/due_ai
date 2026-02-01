@@ -79,6 +79,177 @@ export interface LiFiTokensResponse {
   tokens: Record<string, LiFiToken[]>;
 }
 
+// ============================================================================
+// Quote & Route Types
+// ============================================================================
+
+export interface QuoteRequest {
+  fromChain: number | string;      // Chain ID or key
+  toChain: number | string;        // Chain ID or key
+  fromToken: string;               // Token address
+  toToken: string;                 // Token address
+  fromAmount: string;              // Amount in smallest units (wei)
+  fromAddress?: string;            // User's address (optional for quotes)
+  toAddress?: string;              // Destination address (defaults to fromAddress)
+  slippage?: number;               // Slippage tolerance (0.01 = 1%)
+  order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST' | 'SAFEST';
+}
+
+export interface LiFiAction {
+  fromChainId: number;
+  toChainId: number;
+  fromToken: LiFiToken;
+  toToken: LiFiToken;
+  fromAmount: string;
+  slippage: number;
+  fromAddress?: string;
+  toAddress?: string;
+}
+
+export interface LiFiEstimate {
+  fromAmount: string;
+  toAmount: string;
+  toAmountMin: string;
+  approvalAddress?: string;
+  executionDuration: number;       // Seconds
+  feeCosts?: LiFiFeeCost[];
+  gasCosts?: LiFiGasCost[];
+}
+
+export interface LiFiFeeCost {
+  name: string;
+  description?: string;
+  percentage: string;
+  token: LiFiToken;
+  amount: string;
+  amountUSD?: string;
+}
+
+export interface LiFiGasCost {
+  type: string;
+  estimate: string;
+  limit: string;
+  amount: string;
+  amountUSD?: string;
+  price: string;
+  token: LiFiToken;
+}
+
+export interface LiFiStep {
+  id: string;
+  type: 'swap' | 'cross' | 'lifi' | 'custom';
+  tool: string;                    // e.g., 'uniswap', 'stargate', 'allbridge'
+  toolDetails: {
+    key: string;
+    name: string;
+    logoURI?: string;
+  };
+  action: LiFiAction;
+  estimate: LiFiEstimate;
+  includedSteps?: LiFiStep[];
+}
+
+export interface LiFiQuote {
+  id: string;
+  type: string;
+  tool: string;
+  toolDetails: {
+    key: string;
+    name: string;
+    logoURI?: string;
+  };
+  action: LiFiAction;
+  estimate: LiFiEstimate;
+  includedSteps: LiFiStep[];
+  transactionRequest?: {
+    to: string;
+    from: string;
+    data: string;
+    value: string;
+    gasLimit: string;
+    gasPrice?: string;
+    chainId: number;
+  };
+}
+
+export interface LiFiRoute {
+  id: string;
+  fromChainId: number;
+  fromAmountUSD: string;
+  fromAmount: string;
+  fromToken: LiFiToken;
+  fromAddress?: string;
+  toChainId: number;
+  toAmountUSD: string;
+  toAmount: string;
+  toAmountMin: string;
+  toToken: LiFiToken;
+  toAddress?: string;
+  gasCostUSD?: string;
+  steps: LiFiStep[];
+  tags?: string[];
+}
+
+export interface LiFiRoutesResponse {
+  routes: LiFiRoute[];
+  unavailableRoutes?: {
+    filteredOut: any[];
+    failed: any[];
+  };
+}
+
+// ============================================================================
+// Transaction Status Types
+// ============================================================================
+
+export type TransactionStatus =
+  | 'NOT_FOUND'
+  | 'INVALID'
+  | 'PENDING'
+  | 'DONE'
+  | 'FAILED';
+
+export interface LiFiStatusResponse {
+  transactionId?: string;
+  sending: {
+    txHash: string;
+    txLink?: string;
+    amount: string;
+    token: LiFiToken;
+    chainId: number;
+    gasPrice?: string;
+    gasUsed?: string;
+    gasToken?: LiFiToken;
+    gasAmount?: string;
+    gasAmountUSD?: string;
+    amountUSD?: string;
+    value?: string;
+    timestamp?: number;
+  };
+  receiving?: {
+    txHash?: string;
+    txLink?: string;
+    amount?: string;
+    token?: LiFiToken;
+    chainId?: number;
+    gasPrice?: string;
+    gasUsed?: string;
+    gasToken?: LiFiToken;
+    gasAmount?: string;
+    gasAmountUSD?: string;
+    amountUSD?: string;
+    value?: string;
+    timestamp?: number;
+  };
+  lifiExplorerLink?: string;
+  fromAddress?: string;
+  toAddress?: string;
+  tool?: string;
+  status: TransactionStatus;
+  substatus?: string;
+  substatusMessage?: string;
+}
+
 export class LiFiClient {
   private baseUrl: string;
   private readonly HEALTHY_LATENCY_THRESHOLD = 2000; // 2 seconds
@@ -115,6 +286,51 @@ export class LiFiClient {
 
       if (!response.ok) {
         throw new Error(`LI.FI API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as T;
+
+      return {
+        data,
+        confidence: {
+          score: this.calculateConfidence(latencyMs, true),
+          freshness: 'live',
+          source: 'li.fi',
+          latencyMs,
+          healthy: latencyMs < this.HEALTHY_LATENCY_THRESHOLD,
+        },
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`LI.FI request failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Make a POST request to LI.FI API with confidence scoring
+   */
+  private async postRequest<T>(endpoint: string, body: Record<string, any>): Promise<LiFiResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const latencyMs = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`LI.FI API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json() as T;
@@ -209,5 +425,118 @@ export class LiFiClient {
         latencyMs: Date.now() - startTime,
       };
     }
+  }
+
+  // ==========================================================================
+  // Quote & Route Methods
+  // ==========================================================================
+
+  /**
+   * Get a quote for a cross-chain or same-chain swap
+   * GET /v1/quote
+   */
+  async getQuote(request: QuoteRequest): Promise<LiFiResponse<LiFiQuote>> {
+    const params: Record<string, string> = {
+      fromChain: request.fromChain.toString(),
+      toChain: request.toChain.toString(),
+      fromToken: request.fromToken,
+      toToken: request.toToken,
+      fromAmount: request.fromAmount,
+    };
+
+    if (request.fromAddress) {
+      params.fromAddress = request.fromAddress;
+    }
+    if (request.toAddress) {
+      params.toAddress = request.toAddress;
+    }
+    if (request.slippage !== undefined) {
+      params.slippage = request.slippage.toString();
+    }
+    if (request.order) {
+      params.order = request.order;
+    }
+
+    return this.request<LiFiQuote>('/v1/quote', params);
+  }
+
+  /**
+   * Get multiple routes for comparison
+   * POST /v1/advanced/routes
+   */
+  async getRoutes(request: QuoteRequest): Promise<LiFiResponse<LiFiRoutesResponse>> {
+    const body: Record<string, any> = {
+      fromChainId: Number(request.fromChain),
+      toChainId: Number(request.toChain),
+      fromTokenAddress: request.fromToken,
+      toTokenAddress: request.toToken,
+      fromAmount: request.fromAmount,
+    };
+
+    if (request.fromAddress) {
+      body.fromAddress = request.fromAddress;
+    }
+    if (request.toAddress) {
+      body.toAddress = request.toAddress;
+    }
+    if (request.slippage !== undefined) {
+      body.options = { slippage: request.slippage };
+    }
+    if (request.order) {
+      body.options = { ...body.options, order: request.order };
+    }
+
+    return this.postRequest<LiFiRoutesResponse>('/v1/advanced/routes', body);
+  }
+
+  /**
+   * Get transaction status for cross-chain transfers
+   * GET /v1/status
+   */
+  async getStatus(
+    txHash: string,
+    fromChain: number | string,
+    toChain: number | string
+  ): Promise<LiFiResponse<LiFiStatusResponse>> {
+    const params: Record<string, string> = {
+      txHash,
+      fromChain: fromChain.toString(),
+      toChain: toChain.toString(),
+    };
+
+    return this.request<LiFiStatusResponse>('/v1/status', params);
+  }
+
+  /**
+   * Get available connections between chains (which bridges work)
+   * GET /v1/connections
+   */
+  async getConnections(
+    fromChain: number | string,
+    toChain: number | string,
+    fromToken?: string,
+    toToken?: string
+  ): Promise<LiFiResponse<any>> {
+    const params: Record<string, string> = {
+      fromChain: fromChain.toString(),
+      toChain: toChain.toString(),
+    };
+
+    if (fromToken) {
+      params.fromToken = fromToken;
+    }
+    if (toToken) {
+      params.toToken = toToken;
+    }
+
+    return this.request<any>('/v1/connections', params);
+  }
+
+  /**
+   * Get available tools (bridges and DEXs)
+   * GET /v1/tools
+   */
+  async getTools(): Promise<LiFiResponse<{ bridges: any[]; exchanges: any[] }>> {
+    return this.request<{ bridges: any[]; exchanges: any[] }>('/v1/tools');
   }
 }
