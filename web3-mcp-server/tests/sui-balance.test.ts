@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { DueAiSuiClient } from '../src/clients/sui-client.js';
-import { getBalance, getTokenBalance, formatBalance } from '../src/tools/sui-balance.js';
+import { getBalance, getTokenBalance, formatBalance, listUserAssets } from '../src/tools/sui-balance.js';
 
 describe('Sui Wallet Balance', () => {
   let client: DueAiSuiClient;
@@ -76,6 +76,55 @@ describe('Sui Wallet Balance', () => {
       const result = await getTokenBalance(client, testAddress, 'NONEXISTENT_TOKEN');
 
       expect(result.balance).toBe('0');
+    });
+  });
+
+  describe('listUserAssets', () => {
+    const testAddress = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+    it('should list all assets with balances', async () => {
+      const result = await listUserAssets(client, testAddress);
+
+      expect(result).toHaveProperty('address', testAddress);
+      expect(result).toHaveProperty('assets');
+      expect(result).toHaveProperty('totalAssets');
+      expect(result).toHaveProperty('network', 'testnet');
+      expect(Array.isArray(result.assets)).toBe(true);
+    });
+
+    it('should return asset details with formatted balance', async () => {
+      const result = await listUserAssets(client, testAddress);
+
+      if (result.assets.length > 0) {
+        const asset = result.assets[0];
+        expect(asset).toHaveProperty('symbol');
+        expect(asset).toHaveProperty('coinType');
+        expect(asset).toHaveProperty('balance');
+        expect(asset).toHaveProperty('formattedBalance');
+        expect(asset).toHaveProperty('decimals');
+        expect(typeof asset.decimals).toBe('number');
+      }
+    });
+
+    it('should include SUI token if address has SUI', async () => {
+      const result = await listUserAssets(client, testAddress);
+
+      const suiAsset = result.assets.find((a) => a.symbol === 'SUI');
+      if (suiAsset) {
+        expect(suiAsset.coinType).toContain('sui::SUI');
+        expect(suiAsset.decimals).toBe(9);
+        expect(parseFloat(suiAsset.formattedBalance)).toBeGreaterThan(0);
+      }
+    });
+
+    it('should sort assets alphabetically by symbol', async () => {
+      const result = await listUserAssets(client, testAddress);
+
+      if (result.assets.length > 1) {
+        const symbols = result.assets.map((a) => a.symbol);
+        const sortedSymbols = [...symbols].sort();
+        expect(symbols).toEqual(sortedSymbols);
+      }
     });
   });
 

@@ -11,6 +11,7 @@ export interface CoinBalance {
 export interface WalletBalances {
   address: string;
   balances: Record<string, bigint>;
+  coinTypes: Record<string, string>; // symbol -> full coin type
   totalCoins: number;
 }
 
@@ -51,18 +52,21 @@ export class DueAiSuiClient {
 
       // Aggregate balances by coin type
       const balances: Record<string, bigint> = {};
+      const coinTypes: Record<string, string> = {};
 
       for (const coin of coins.data) {
         // Extract the token name from the full type path
         // e.g., "0x2::sui::SUI" -> "SUI"
-        const coinType = coin.coinType.split('::').pop() || 'UNKNOWN';
-        const currentBalance = balances[coinType] || BigInt(0);
-        balances[coinType] = currentBalance + BigInt(coin.balance);
+        const symbol = coin.coinType.split('::').pop() || 'UNKNOWN';
+        const currentBalance = balances[symbol] || BigInt(0);
+        balances[symbol] = currentBalance + BigInt(coin.balance);
+        coinTypes[symbol] = coin.coinType; // Store full type path
       }
 
       return {
         address,
         balances,
+        coinTypes,
         totalCoins: coins.data.length,
       };
     } catch (error) {

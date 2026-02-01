@@ -19,6 +19,30 @@ export interface TokenBalanceResponse {
   network: string;
 }
 
+export interface Asset {
+  symbol: string;
+  coinType: string; // Full type path e.g., "0x2::sui::SUI"
+  balance: string;
+  formattedBalance: string;
+  decimals: number;
+}
+
+export interface UserAssetsResponse {
+  address: string;
+  assets: Asset[];
+  totalAssets: number;
+  network: string;
+}
+
+// Known token decimals (add more as needed)
+const TOKEN_DECIMALS: Record<string, number> = {
+  SUI: 9,
+  USDC: 6,
+  USDT: 6,
+  WETH: 8,
+  WBTC: 8,
+};
+
 /**
  * Get all token balances for a Sui wallet
  */
@@ -38,6 +62,41 @@ export async function getBalance(
     address: result.address,
     balances,
     totalCoins: result.totalCoins,
+    network: client.getNetwork(),
+  };
+}
+
+/**
+ * List all assets (tokens) a user holds with their balances
+ */
+export async function listUserAssets(
+  client: DueAiSuiClient,
+  address: string
+): Promise<UserAssetsResponse> {
+  const result = await client.getBalance(address);
+
+  const assets: Asset[] = [];
+
+  for (const [symbol, balance] of Object.entries(result.balances)) {
+    const decimals = TOKEN_DECIMALS[symbol] || 9; // Default to 9 decimals
+    const coinType = result.coinTypes[symbol] || `unknown::${symbol}`;
+
+    assets.push({
+      symbol,
+      coinType,
+      balance: balance.toString(),
+      formattedBalance: formatBalance(balance, decimals),
+      decimals,
+    });
+  }
+
+  // Sort by symbol for consistent ordering
+  assets.sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+  return {
+    address,
+    assets,
+    totalAssets: assets.length,
     network: client.getNetwork(),
   };
 }
