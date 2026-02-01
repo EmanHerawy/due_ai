@@ -42,4 +42,6 @@ Crypto payments today are **manual and fragmented**.
 * **Intent Registry:** Stores recurring payment metadata on-chain for transparency.
 
 
+## links 
 
+* [TG Bot](https://t.me/DueAI_bot)
