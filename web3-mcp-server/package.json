@@ -1,0 +1,25 @@
+{
+  "name": "due-ai-web3-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@lifi/sdk": "^3.15.4",
+    "@lifi/types": "^17.59.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "@mysten/sui.js": "^0.54.1",
+    "dotenv": "^17.2.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "@vitest/ui": "^4.0.18",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
