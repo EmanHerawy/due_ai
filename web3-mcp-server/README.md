@@ -37,10 +37,12 @@ npm run dev
 │           │                          │                      │
 │  ┌────────▼────────┐    ┌────────────▼────────────────────┐│
 │  │ • get_balance   │    │ • getSupportedChains            ││
-│  │ • list_assets   │    │ • getQuote                      ││
-│  │ • get_token_bal │    │ • getRoutes                     ││
-│  └─────────────────┘    │ • getTransactionStatus          ││
-│                         │ • canBridge                     ││
+│  │ • list_assets   │    │ • getQuote / getRoutes          ││
+│  │ • get_token_bal │    │ • getTransactionStatus          ││
+│  └─────────────────┘    │ • canBridge                     ││
+│                         │ • getTokenPrice                 ││
+│                         │ • getPortfolioValue             ││
+│                         │ • getCrossChainTokens           ││
 │                         └─────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -170,15 +172,44 @@ const status = await getTransactionStatus(client, txHash, 1, 137);
 const desc = await getQuoteDescription(client, ...);
 ```
 
+### LI.FI Portfolio Tools
+
+```typescript
+// Get token price by address
+const price = await getTokenPrice(client, 1, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
+// Returns: { symbol: "USDC", priceUSD: 1.0, ... }
+
+// Get token price by symbol (searches across chains)
+const prices = await getTokenPriceBySymbol(client, "USDC");
+// Returns: USDC prices on Ethereum, Polygon, Arbitrum, etc.
+
+// Get common token prices (USDC, USDT, DAI, WETH, WBTC, ETH)
+const common = await getCommonTokenPrices(client);
+// Returns: { USDC: { priceUSD: 1.0 }, WETH: { priceUSD: 2285.52 }, ... }
+
+// Get tokens across multiple chains
+const tokens = await getCrossChainTokens(client, [1, 137, 42161]);
+// Returns: Top 50 tokens per chain with prices
+
+// Calculate portfolio value from balances
+const portfolio = calculatePortfolioValue(balances, priceMap);
+// Returns: { totalValueUSD, chainCount, tokenCount, topHoldings, chains }
+
+// Format portfolio as readable string
+const description = formatPortfolioDescription(portfolio);
+// Returns: Markdown formatted portfolio summary
+```
+
 ## Test Results
 
 ```
-Test Files  3 passed
-Tests       49 passed
+Test Files  4 passed
+Tests       65 passed
 
 ✓ Sui Balance Tests (17)
 ✓ LI.FI Chain Tests (19)
 ✓ LI.FI Quote Tests (13)
+✓ LI.FI Portfolio Tests (16)
 ```
 
 ## Project Structure
@@ -193,11 +224,13 @@ web3-mcp-server/
 │   └── tools/
 │       ├── sui-balance.ts    # Sui balance tools
 │       ├── lifi-chains.ts    # LI.FI chain tools
-│       └── lifi-quotes.ts    # LI.FI quote tools
+│       ├── lifi-quotes.ts    # LI.FI quote tools
+│       └── lifi-portfolio.ts # LI.FI portfolio tools
 ├── tests/
 │   ├── sui-balance.test.ts
 │   ├── lifi-chains.test.ts
-│   └── lifi-quotes.test.ts
+│   ├── lifi-quotes.test.ts
+│   └── lifi-portfolio.test.ts
 ├── Dockerfile
 ├── docker-compose.yml
 └── package.json
