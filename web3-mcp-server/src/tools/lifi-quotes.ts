@@ -121,40 +121,44 @@ function formatDuration(seconds: number): string {
 }
 
 function quoteToSummary(quote: LiFiQuote | LiFiRoute): QuoteSummary {
-  const fromToken = quote.action?.fromToken || (quote as LiFiRoute).fromToken;
-  const toToken = quote.action?.toToken || (quote as LiFiRoute).toToken;
-  const fromAmount = quote.action?.fromAmount || (quote as LiFiRoute).fromAmount;
-  const toAmount = quote.estimate?.toAmount || (quote as LiFiRoute).toAmount;
-  const toAmountMin = quote.estimate?.toAmountMin || (quote as LiFiRoute).toAmountMin;
+  // Type-safe access using type guards
+  const asQuote = quote as LiFiQuote;
+  const asRoute = quote as LiFiRoute;
+
+  const fromToken = asQuote.action?.fromToken || asRoute.fromToken;
+  const toToken = asQuote.action?.toToken || asRoute.toToken;
+  const fromAmount = asQuote.action?.fromAmount || asRoute.fromAmount;
+  const toAmount = asQuote.estimate?.toAmount || asRoute.toAmount;
+  const toAmountMin = asQuote.estimate?.toAmountMin || asRoute.toAmountMin;
 
   // Calculate costs
   let gasUSD = '0';
   let feesUSD = '0';
 
-  if (quote.estimate?.gasCosts) {
-    gasUSD = quote.estimate.gasCosts
-      .reduce((sum, cost) => sum + parseFloat(cost.amountUSD || '0'), 0)
+  if (asQuote.estimate?.gasCosts) {
+    gasUSD = asQuote.estimate.gasCosts
+      .reduce((sum: number, cost: { amountUSD?: string }) => sum + parseFloat(cost.amountUSD || '0'), 0)
       .toFixed(2);
   }
 
-  if (quote.estimate?.feeCosts) {
-    feesUSD = quote.estimate.feeCosts
-      .reduce((sum, cost) => sum + parseFloat(cost.amountUSD || '0'), 0)
+  if (asQuote.estimate?.feeCosts) {
+    feesUSD = asQuote.estimate.feeCosts
+      .reduce((sum: number, cost: { amountUSD?: string }) => sum + parseFloat(cost.amountUSD || '0'), 0)
       .toFixed(2);
   }
 
   // For routes, use the gasCostUSD field
-  if ((quote as LiFiRoute).gasCostUSD) {
-    gasUSD = (quote as LiFiRoute).gasCostUSD!;
+  if (asRoute.gasCostUSD) {
+    gasUSD = asRoute.gasCostUSD;
   }
 
   const totalCostUSD = (parseFloat(gasUSD) + parseFloat(feesUSD)).toFixed(2);
 
   // Calculate duration from steps
-  let totalDuration = quote.estimate?.executionDuration || 0;
+  let totalDuration = asQuote.estimate?.executionDuration || 0;
   const steps: StepSummary[] = [];
 
-  const includedSteps = quote.includedSteps || (quote as LiFiRoute).steps || [];
+  const includedSteps = asQuote.includedSteps || asRoute.steps || [];
   for (const step of includedSteps) {
     if (step.estimate?.executionDuration) {
       totalDuration += step.estimate.executionDuration;
@@ -178,10 +182,10 @@ function quoteToSummary(quote: LiFiQuote | LiFiRoute): QuoteSummary {
 
   return {
     fromChain: {
-      id: quote.action?.fromChainId || (quote as LiFiRoute).fromChainId,
+      id: asQuote.action?.fromChainId || asRoute.fromChainId,
     },
     toChain: {
-      id: quote.action?.toChainId || (quote as LiFiRoute).toChainId,
+      id: asQuote.action?.toChainId || asRoute.toChainId,
     },
     fromToken: {
       symbol: fromToken.symbol,
@@ -204,7 +208,7 @@ function quoteToSummary(quote: LiFiQuote | LiFiRoute): QuoteSummary {
     totalCostUSD,
     estimatedDurationSeconds: totalDuration,
     estimatedDurationFormatted: formatDuration(totalDuration),
-    toolUsed: quote.tool || (quote as LiFiRoute).steps?.[0]?.tool || 'unknown',
+    toolUsed: asQuote.tool || asRoute.steps?.[0]?.tool || 'unknown',
     bridgeUsed: bridgeStep?.tool,
     steps,
   };

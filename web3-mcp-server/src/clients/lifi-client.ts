@@ -250,6 +250,50 @@ export interface LiFiStatusResponse {
   substatusMessage?: string;
 }
 
+// ============================================================================
+// Gas Price Types
+// ============================================================================
+
+export interface LiFiGasPriceData {
+  standard: number;
+  fast: number;
+  fastest: number;
+  lastUpdated: number;
+}
+
+export interface LiFiGasPricesResponse {
+  [chainId: string]: LiFiGasPriceData;
+}
+
+export interface LiFiGasPrice {
+  chainId: number;
+  standard: string;
+  fast: string;
+  instant: string;
+  lastUpdated?: number;
+}
+
+// ============================================================================
+// Token Balance Types
+// ============================================================================
+
+export interface LiFiTokenBalance {
+  address: string;
+  symbol: string;
+  decimals: number;
+  chainId: number;
+  name: string;
+  coinKey?: string;
+  logoURI?: string;
+  priceUSD?: string;
+  amount: string;
+  blockNumber?: number;
+}
+
+export interface LiFiTokenBalancesResponse {
+  [chainId: string]: LiFiTokenBalance[];
+}
+
 export class LiFiClient {
   private baseUrl: string;
   private readonly HEALTHY_LATENCY_THRESHOLD = 2000; // 2 seconds
@@ -538,5 +582,92 @@ export class LiFiClient {
    */
   async getTools(): Promise<LiFiResponse<{ bridges: any[]; exchanges: any[] }>> {
     return this.request<{ bridges: any[]; exchanges: any[] }>('/v1/tools');
+  }
+
+  // ==========================================================================
+  // Gas Price Methods
+  // ==========================================================================
+
+  /**
+   * Get all gas prices (returns all chains at once)
+   * GET /v1/gas/prices
+   */
+  async getAllGasPrices(): Promise<LiFiResponse<LiFiGasPricesResponse>> {
+    return this.request<LiFiGasPricesResponse>('/v1/gas/prices');
+  }
+
+  /**
+   * Get gas prices for a specific chain
+   * Extracts from the all-chains response
+   */
+  async getGasPrice(chainId: number): Promise<LiFiResponse<LiFiGasPrice>> {
+    const response = await this.getAllGasPrices();
+    const chainGas = response.data[chainId.toString()];
+
+    if (!chainGas) {
+      throw new Error(`Gas prices not available for chain ${chainId}`);
+    }
+
+    return {
+      data: {
+        chainId,
+        standard: chainGas.standard.toString(),
+        fast: chainGas.fast.toString(),
+        instant: chainGas.fastest.toString(),
+        lastUpdated: chainGas.lastUpdated,
+      },
+      confidence: response.confidence,
+      timestamp: response.timestamp,
+    };
+  }
+
+  /**
+   * Get gas prices for multiple chains
+   */
+  async getGasPrices(chainIds: number[]): Promise<LiFiResponse<LiFiGasPrice[]>> {
+    const response = await this.getAllGasPrices();
+    const results: LiFiGasPrice[] = [];
+
+    for (const chainId of chainIds) {
+      const chainGas = response.data[chainId.toString()];
+      if (chainGas) {
+        results.push({
+          chainId,
+          standard: chainGas.standard.toString(),
+          fast: chainGas.fast.toString(),
+          instant: chainGas.fastest.toString(),
+          lastUpdated: chainGas.lastUpdated,
+        });
+      }
+    }
+
+    return {
+      data: results,
+      confidence: response.confidence,
+      timestamp: response.timestamp,
+    };
+  }
+
+  // ==========================================================================
+  // Token Balance Methods
+  // ==========================================================================
+
+  /**
+   * Get token balances for a wallet address across chains
+   * GET /v1/token/balances
+   */
+  async getTokenBalances(
+    walletAddress: string,
+    chainIds?: number[]
+  ): Promise<LiFiResponse<LiFiTokenBalancesResponse>> {
+    const params: Record<string, string> = {
+      walletAddress,
+    };
+
+    if (chainIds && chainIds.length > 0) {
+      params.chains = chainIds.join(',');
+    }
+
+    return this.request<LiFiTokenBalancesResponse>('/v1/token/balances', params);
   }
 }
