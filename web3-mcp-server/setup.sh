@@ -55,8 +55,8 @@ case "$MODEL_PROVIDER" in
         echo "[ok] Provider: OpenAI ($OPENCLAW_MODEL)"
         ;;
     google)
-        if [ -z "$GOOGLE_AI_API_KEY" ]; then
-            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires GOOGLE_AI_API_KEY in .env"
+        if [ -z "$GEMINI_API_KEY" ]; then
+            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires GEMINI_API_KEY in .env"
             exit 1
         fi
         echo "[ok] Provider: Google ($OPENCLAW_MODEL)"
