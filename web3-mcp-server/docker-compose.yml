@@ -7,19 +7,26 @@ services:
   openclaw-gateway:
     image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-gateway
-    command: ["openclaw", "gateway", "--port", "18789", "--verbose"]
+    command: ["node", "dist/index.js", "gateway", "--port", "${OPENCLAW_GATEWAY_PORT:-18789}", "--verbose"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allows container to reach host (for Ollama)
     ports:
-      - "18789:18789"  # Gateway API + Dashboard
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:${OPENCLAW_GATEWAY_PORT:-18789}"
     volumes:
-      # OpenClaw config and data
-      - openclaw-config:/home/node/.openclaw
-      - openclaw-workspace:/home/node/.openclaw/workspace
+      # OpenClaw state dir (config + runtime state like canvas, cron, sessions)
+      - ./.openclaw:/home/node/.openclaw
       # Mount our MCP server for mcporter to access
       - ./:/home/node/web3-mcp-server:ro
     environment:
       - NODE_ENV=production
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      # LLM provider keys — set the one(s) matching your OPENCLAW_MODEL
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY:-}
+      # Channel tokens
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
     networks:
       - openclaw-network
     restart: unless-stopped
@@ -33,11 +40,14 @@ services:
     image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-cli
     volumes:
-      - openclaw-config:/home/node/.openclaw
-      - openclaw-workspace:/home/node/.openclaw/workspace
+      - ./.openclaw:/home/node/.openclaw
       - ./:/home/node/web3-mcp-server:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
     networks:
       - openclaw-network
     profiles:
@@ -60,10 +70,6 @@ services:
     networks:
       - openclaw-network
     restart: unless-stopped
-
-volumes:
-  openclaw-config:
-  openclaw-workspace:
 
 networks:
   openclaw-network:

@@ -29,11 +29,48 @@ set -a
 source .env
 set +a
 
-# --- Validate required vars ---
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "ERROR: ANTHROPIC_API_KEY is not set in .env"
-    exit 1
-fi
+# --- Defaults ---
+OPENCLAW_MODEL="${OPENCLAW_MODEL:-anthropic/claude-sonnet-4-5-20250929}"
+OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+TELEGRAM_DM_POLICY="${TELEGRAM_DM_POLICY:-open}"
+DISCORD_DM_POLICY="${DISCORD_DM_POLICY:-open}"
+WHATSAPP_DM_POLICY="${WHATSAPP_DM_POLICY:-open}"
+
+# --- Detect provider from model and validate API key ---
+MODEL_PROVIDER=$(echo "$OPENCLAW_MODEL" | cut -d'/' -f1)
+
+case "$MODEL_PROVIDER" in
+    anthropic)
+        if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires ANTHROPIC_API_KEY in .env"
+            exit 1
+        fi
+        echo "[ok] Provider: Anthropic ($OPENCLAW_MODEL)"
+        ;;
+    openai)
+        if [ -z "$OPENAI_API_KEY" ]; then
+            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires OPENAI_API_KEY in .env"
+            exit 1
+        fi
+        echo "[ok] Provider: OpenAI ($OPENCLAW_MODEL)"
+        ;;
+    google)
+        if [ -z "$GOOGLE_AI_API_KEY" ]; then
+            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires GOOGLE_AI_API_KEY in .env"
+            exit 1
+        fi
+        echo "[ok] Provider: Google ($OPENCLAW_MODEL)"
+        ;;
+    ollama)
+        OLLAMA_HOST="${OLLAMA_HOST:-http://host.docker.internal:11434}"
+        OLLAMA_ENABLED="true"
+        echo "[ok] Provider: Ollama local ($OPENCLAW_MODEL)"
+        echo "     Ollama API: $OLLAMA_HOST"
+        ;;
+    *)
+        echo "[!!] Unknown provider '$MODEL_PROVIDER' — make sure the right API key is set"
+        ;;
+esac
 
 # --- Generate gateway token if empty ---
 if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
@@ -46,15 +83,9 @@ if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
     echo "[ok] Generated gateway token"
 fi
 
-# --- Defaults ---
-OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
-OPENCLAW_MODEL="${OPENCLAW_MODEL:-anthropic/claude-sonnet-4-5-20250929}"
-TELEGRAM_DM_POLICY="${TELEGRAM_DM_POLICY:-open}"
-DISCORD_DM_POLICY="${DISCORD_DM_POLICY:-open}"
-WHATSAPP_DM_POLICY="${WHATSAPP_DM_POLICY:-open}"
-
-# --- Build channels JSON ---
+# --- Build channels JSON + plugins JSON ---
 CHANNELS=""
+PLUGINS=""
 
 # Telegram
 if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
@@ -62,10 +93,14 @@ if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
     [ "$TELEGRAM_DM_POLICY" != "open" ] && TG_ALLOW='[]'
     CHANNELS="${CHANNELS:+$CHANNELS,
     }\"telegram\": {
-      \"botToken\": \"$TELEGRAM_BOT_TOKEN\",
       \"dmPolicy\": \"$TELEGRAM_DM_POLICY\",
-      \"allowFrom\": $TG_ALLOW
+      \"botToken\": \"$TELEGRAM_BOT_TOKEN\",
+      \"allowFrom\": $TG_ALLOW,
+      \"groupPolicy\": \"allowlist\",
+      \"streamMode\": \"partial\"
     }"
+    PLUGINS="${PLUGINS:+$PLUGINS,
+      }\"telegram\": { \"enabled\": true }"
     echo "[ok] Telegram channel configured (dmPolicy: $TELEGRAM_DM_POLICY)"
 else
     echo "[--] Telegram: skipped (no TELEGRAM_BOT_TOKEN)"
@@ -84,6 +119,8 @@ if [ -n "$DISCORD_BOT_TOKEN" ]; then
         \"allowFrom\": $DC_ALLOW
       }
     }"
+    PLUGINS="${PLUGINS:+$PLUGINS,
+      }\"discord\": { \"enabled\": true }"
     echo "[ok] Discord channel configured (dmPolicy: $DISCORD_DM_POLICY)"
 else
     echo "[--] Discord: skipped (no DISCORD_BOT_TOKEN)"
@@ -107,6 +144,22 @@ else
     echo "     To pair later: docker compose run --rm openclaw-cli channels login"
 fi
 
+# --- Build optional models block (only for custom providers like Ollama) ---
+MODELS_BLOCK=""
+if [ "$OLLAMA_ENABLED" = "true" ]; then
+    OLLAMA_MODEL_NAME=$(echo "$OPENCLAW_MODEL" | cut -d'/' -f2-)
+    MODELS_BLOCK="\"models\": {
+    \"providers\": {
+      \"ollama\": {
+        \"api\": \"openai-completions\",
+        \"baseUrl\": \"${OLLAMA_HOST}/v1\",
+        \"apiKey\": \"ollama\",
+        \"models\": [{\"id\": \"$OLLAMA_MODEL_NAME\", \"name\": \"$OLLAMA_MODEL_NAME\"}]
+      }
+    }
+  },"
+fi
+
 # --- Generate openclaw.json ---
 echo "[..] Generating openclaw.json config..."
 
@@ -115,21 +168,24 @@ mkdir -p "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/openclaw.json" <<JSONEOF
 {
-  "gateway": {
-    "mode": "local",
-    "port": $OPENCLAW_GATEWAY_PORT,
-    "auth": {
-      "token": "$OPENCLAW_GATEWAY_TOKEN"
-    }
+  "logging": {
+    "level": "info",
+    "consoleLevel": "info",
+    "consoleStyle": "pretty",
+    "redactSensitive": "tools"
   },
+  $MODELS_BLOCK
   "agents": {
     "defaults": {
-      "workspace": "~/.openclaw/workspace",
       "model": {
         "primary": "$OPENCLAW_MODEL"
       },
+      "workspace": "/home/node/.openclaw/workspace",
       "timeoutSeconds": 120,
-      "maxConcurrent": 1
+      "maxConcurrent": 1,
+      "subagents": {
+        "maxConcurrent": 8
+      }
     },
     "list": [
       {
@@ -141,24 +197,38 @@ cat > "$CONFIG_DIR/openclaw.json" <<JSONEOF
       }
     ]
   },
+  "tools": {
+    "profile": "messaging"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
   "session": {
     "scope": "per-sender",
+    "resetTriggers": ["/new", "/reset"],
     "reset": {
       "mode": "idle",
       "idleMinutes": 30
-    },
-    "resetTriggers": ["/new", "/reset"]
+    }
   },
   "channels": {
     $CHANNELS
   },
-  "tools": {
-    "profile": "messaging"
+  "gateway": {
+    "port": $OPENCLAW_GATEWAY_PORT,
+    "mode": "local",
+    "auth": {
+      "token": "$OPENCLAW_GATEWAY_TOKEN"
+    }
   },
-  "logging": {
-    "level": "info",
-    "consoleLevel": "info",
-    "consoleStyle": "pretty"
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "plugins": {
+    "entries": {
+      $PLUGINS
+    }
   }
 }
 JSONEOF
@@ -200,6 +270,7 @@ echo "  Setup Complete!"
 echo "=============================================="
 echo ""
 echo "Config:    .openclaw/openclaw.json"
+echo "Model:     $OPENCLAW_MODEL"
 echo "Gateway:   http://localhost:$OPENCLAW_GATEWAY_PORT"
 echo "Token:     ${OPENCLAW_GATEWAY_TOKEN:0:8}..."
 echo ""
