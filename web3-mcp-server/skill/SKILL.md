@@ -162,14 +162,24 @@ Environment variables:
 - `SUI_NETWORK`: Sui network (testnet, mainnet, devnet) - default: testnet
 - `LIFI_API_KEY`: Optional LI.FI API key for higher rate limits
 
-## MCP Server
+## MCP Server Configuration
 
 This skill uses an MCP server with stdio transport. Configure via mcporter:
 
 ```bash
 # Local development
-mcporter add due-ai-web3 --transport stdio -- npx tsx src/index.ts
+mcporter config add due-ai-web3 --transport stdio -- npx tsx src/index.ts
 
 # Docker
 mcporter add due-ai-web3 --transport stdio -- docker compose run --rm -i due-ai-web3-mcp
+```
+# MCP Server Verification
+To verify everything is working correctly:
+
+Check MCP is available:
+
+```bash 
+Ask the agent: "List available MCP tools"
+Should see due-ai-web3-related tools
+
 ```

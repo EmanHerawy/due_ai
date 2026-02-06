@@ -169,8 +169,8 @@ mkdir -p "$CONFIG_DIR"
 cat > "$CONFIG_DIR/openclaw.json" <<JSONEOF
 {
   "logging": {
-    "level": "info",
-    "consoleLevel": "info",
+    "level": "debug",
+    "consoleLevel": "debug",
     "consoleStyle": "pretty",
     "redactSensitive": "tools"
   },
@@ -236,7 +236,14 @@ JSONEOF
 # Ensure the openclaw dir is writable by the container (node user, uid 1000)
 mkdir -p "$CONFIG_DIR/workspace/memory" "$CONFIG_DIR/canvas" "$CONFIG_DIR/cron"
 
-echo "[ok] Config written to .openclaw/openclaw.json"
+# --- Copy MCP config to mcporter's expected home path ---
+# mcporter discovers configs at ~/.mcporter/mcporter.json (i.e. /home/node/.mcporter/ in container)
+# We create a separate .mcporter dir that gets mounted directly to /home/node/.mcporter
+MCPORTER_DIR="$SCRIPT_DIR/.mcporter"
+mkdir -p "$MCPORTER_DIR"
+cp "$SCRIPT_DIR/mcp-config.json" "$MCPORTER_DIR/mcporter.json"
+echo "[ok] mcporter config written to .mcporter/mcporter.json"
+echo "[ok] OpenClaw config written to .openclaw/openclaw.json"
 
 # --- Seed workspace from templates (won't overwrite existing files) ---
 echo "[..] Seeding agent workspace files..."
@@ -259,6 +266,7 @@ else
 fi
 
 chmod -R 777 "$CONFIG_DIR"
+chmod -R 777 "$MCPORTER_DIR"
 
 # --- Build MCP server ---
 echo "[..] Building Due AI Web3 MCP Server..."

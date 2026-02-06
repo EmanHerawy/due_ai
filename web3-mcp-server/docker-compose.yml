@@ -7,7 +7,8 @@ services:
   openclaw-gateway:
     image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-gateway
-    command: ["node", "dist/index.js", "gateway", "--port", "${OPENCLAW_GATEWAY_PORT:-18789}", "--verbose"]
+    entrypoint: ["sh", "-c", "npx -y mcporter@latest --version && exec docker-entrypoint.sh \"$@\"", "--"]
+    command: ["node", "dist/index.js", "gateway", "--verbose"]
     extra_hosts:
       - "host.docker.internal:host-gateway"  # Allows container to reach host (for Ollama)
     ports:
@@ -15,10 +16,14 @@ services:
     volumes:
       # OpenClaw state dir (config + runtime state like canvas, cron, sessions)
       - ./.openclaw:/home/node/.openclaw
+      # mcporter config — must be at ~/.mcporter for default discovery
+      - ./.mcporter:/home/node/.mcporter
       # Mount our MCP server for mcporter to access
       - ./:/home/node/web3-mcp-server:ro
     environment:
       - NODE_ENV=production
+      # mcporter config discovery — must point to the actual config file
+      - MCPORTER_CONFIG=/home/node/.mcporter/mcporter.json
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
       # LLM provider keys — set the one(s) matching your OPENCLAW_MODEL
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -41,8 +46,10 @@ services:
     container_name: openclaw-cli
     volumes:
       - ./.openclaw:/home/node/.openclaw
+      - ./.mcporter:/home/node/.mcporter
       - ./:/home/node/web3-mcp-server:ro
     environment:
+      - MCPORTER_CONFIG=/home/node/.mcporter/mcporter.json
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

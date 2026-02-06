@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "due-ai-web3": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "run",
+        "--rm",
+        "-i",
+        "due-ai-web3-mcp"
+      ],
+      "env": {
+        "SUI_NETWORK": "testnet"
+      },
+      "transport": "stdio",
+      "description": "Cross-chain crypto tools: Sui balances, LI.FI quotes/routes, token prices, gas estimation, wallet balances (61+ chains)"
+    }
+  }
+}

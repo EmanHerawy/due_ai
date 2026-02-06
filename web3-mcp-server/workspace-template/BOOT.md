@@ -1,7 +1,10 @@
 # Boot Checklist
 
 Runs on gateway restart when internal hooks are enabled.
-
+1. Verify that mcporter is installed by running `npx mcporter list`.
+2. If mcporter is not installed, install it by running `npx mcporter install`.
+3. Verify that due-ai-web3 is added to mcporter by running `npx mcporter list`. if not, add it by running `npx mcporter add due-ai-web3`.
+1. Send status message via Telegram: "Due AI starting up ⚡. All systems go."
 1. Read today's and yesterday's memory files from `memory/`.
 2. Read `MEMORY.md` for long-term context.
 3. Verify MCP server connectivity by calling `get_common_token_prices`.
