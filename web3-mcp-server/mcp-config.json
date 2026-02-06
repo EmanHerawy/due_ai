@@ -1,14 +1,8 @@
 {
   "mcpServers": {
     "due-ai-web3": {
-      "command": "docker",
-      "args": [
-        "compose",
-        "run",
-        "--rm",
-        "-i",
-        "due-ai-web3-mcp"
-      ],
+      "command": "node",
+      "args": ["/home/node/web3-mcp-server/dist/index.js"],
       "env": {
         "SUI_NETWORK": "testnet"
       },

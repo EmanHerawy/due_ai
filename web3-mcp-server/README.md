@@ -203,13 +203,14 @@ const description = formatPortfolioDescription(portfolio);
 ## Test Results
 
 ```
-Test Files  4 passed
-Tests       65 passed
+Test Files  5 passed
+Tests       82 passed
 
 ✓ Sui Balance Tests (17)
 ✓ LI.FI Chain Tests (19)
 ✓ LI.FI Quote Tests (13)
 ✓ LI.FI Portfolio Tests (16)
+✓ LI.FI Gas & Wallet Tests (17)
 ```
 
 ## Project Structure

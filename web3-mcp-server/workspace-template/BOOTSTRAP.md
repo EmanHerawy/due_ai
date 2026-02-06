@@ -18,9 +18,8 @@ Send the user:
 ---
 
 ### 2. Verify execution infrastructure.
-Call:
-- `get_supported_chains`
-- routing adapters (DeepBook, LI.FI if available)
+Call via exec:
+- `npx mcporter 'due-ai-web3.get_supported_chains()' --output json`
 
 Log to `memory/YYYY-MM-DD.md`:
 > "Bootstrap: execution infra verified. [N] chains available."
