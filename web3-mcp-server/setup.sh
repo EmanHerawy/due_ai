@@ -198,7 +198,7 @@ cat > "$CONFIG_DIR/openclaw.json" <<JSONEOF
     ]
   },
   "tools": {
-    "profile": "messaging"
+    "profile": "full"
   },
   "commands": {
     "native": "auto",
