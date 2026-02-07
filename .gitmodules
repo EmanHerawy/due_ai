@@ -1,0 +1,3 @@
+[submodule "smart_contracts/evm_vault/lib/openzeppelin-contracts"]
+	path = smart_contracts/evm_vault/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
