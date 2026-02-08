@@ -98,12 +98,14 @@ When `build_sui_transfer` returns, the response contains:
 👉 [**Sign Now**]({signingInfo.signingUrl})
 ```
 
-**Rules:**
+**Rules (NON-NEGOTIABLE):**
 - ALWAYS show the educational breakdown before the signing link.
-- ALWAYS present `signingInfo.signingUrl` as a clickable "Sign Now" link.
-- NEVER ask the user to copy-paste raw txBytes. The signing portal handles everything.
-- NEVER skip the "This transaction CANNOT" section — it builds user trust.
-- If `signingInfo.signingUrl` is empty, fall back to showing raw `txBytes` and ask the user to sign externally.
+- **ALWAYS use `signingInfo.signingUrl` from the tool response as the Sign Now link.** The URL will look like `https://t.me/DueAI_bot/sign?startapp=...` — this opens the Signing Portal Telegram Mini App.
+- **ALWAYS** format the sign link exactly as: `👉 [**Sign Now**](THE_URL_FROM_signingInfo.signingUrl)`
+- **NEVER** say "a direct signing link isn't available" when `signingInfo.signingUrl` is present in the response — it IS the signing link.
+- **NEVER** show raw `txBytes` to the user when `signingInfo.signingUrl` exists. The Signing Portal handles everything.
+- **NEVER** skip the "This transaction CANNOT" section — it builds user trust.
+- Only fall back to showing raw `txBytes` if `signingInfo.signingUrl` is literally an empty string `""`.
 
 ### Chain Discovery (3 tools)
 
