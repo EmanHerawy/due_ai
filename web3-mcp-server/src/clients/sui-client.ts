@@ -1,4 +1,7 @@
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
+import type { DryRunTransactionBlockResponse, SuiTransactionBlockResponse } from '@mysten/sui.js/client';
+import { TransactionBlock } from '@mysten/sui.js/transactions';
+import { toB64 } from '@mysten/sui.js/utils';
 
 export type SuiNetwork = 'mainnet' | 'testnet' | 'devnet';
 
@@ -95,5 +98,108 @@ export class DueAiSuiClient {
   ): Promise<boolean> {
     const balance = await this.getTokenBalance(address, tokenType);
     return balance >= minAmount;
+  }
+
+  /**
+   * Build an unsigned native SUI transfer transaction.
+   * Uses splitCoins(tx.gas) to split the exact amount from the gas coin.
+   */
+  async buildSuiTransfer(
+    sender: string,
+    recipient: string,
+    amountMist: bigint,
+    gasBudget?: bigint
+  ): Promise<{ txBytes: string; tx: TransactionBlock }> {
+    const tx = new TransactionBlock();
+    tx.setSender(sender);
+
+    const [coin] = tx.splitCoins(tx.gas, [amountMist]);
+    tx.transferObjects([coin], recipient);
+
+    if (gasBudget) {
+      tx.setGasBudget(gasBudget);
+    }
+
+    const txBytes = await tx.build({ client: this.client });
+    return { txBytes: toB64(txBytes), tx };
+  }
+
+  /**
+   * Build an unsigned transfer for a non-SUI coin type.
+   * Fetches the sender's coins, merges if needed, splits the exact amount, and transfers.
+   */
+  async buildCoinTransfer(
+    sender: string,
+    recipient: string,
+    amount: bigint,
+    coinType: string,
+    gasBudget?: bigint
+  ): Promise<{ txBytes: string; tx: TransactionBlock }> {
+    // Fetch coins of the specified type
+    const coins = await this.client.getCoins({ owner: sender, coinType });
+    if (coins.data.length === 0) {
+      throw new Error(`No coins of type ${coinType} found for address ${sender}`);
+    }
+
+    // Check total balance
+    const totalBalance = coins.data.reduce((sum, c) => sum + BigInt(c.balance), BigInt(0));
+    if (totalBalance < amount) {
+      throw new Error(
+        `Insufficient balance: have ${totalBalance.toString()} but need ${amount.toString()} of ${coinType}`
+      );
+    }
+
+    const tx = new TransactionBlock();
+    tx.setSender(sender);
+
+    if (gasBudget) {
+      tx.setGasBudget(gasBudget);
+    }
+
+    // Use the first coin as primary, merge others into it if needed
+    const primaryCoin = tx.object(coins.data[0].coinObjectId);
+
+    if (coins.data.length > 1) {
+      const otherCoins = coins.data.slice(1).map((c) => tx.object(c.coinObjectId));
+      tx.mergeCoins(primaryCoin, otherCoins);
+    }
+
+    const [splitCoin] = tx.splitCoins(primaryCoin, [amount]);
+    tx.transferObjects([splitCoin], recipient);
+
+    const txBytes = await tx.build({ client: this.client });
+    return { txBytes: toB64(txBytes), tx };
+  }
+
+  /**
+   * Dry-run a transaction to estimate gas costs without executing it.
+   */
+  async dryRunTransaction(txBytes: string): Promise<DryRunTransactionBlockResponse> {
+    return this.client.dryRunTransactionBlock({ transactionBlock: txBytes });
+  }
+
+  /**
+   * Execute a signed transaction on the Sui network.
+   */
+  async executeSignedTransaction(
+    txBytes: string,
+    signature: string
+  ): Promise<SuiTransactionBlockResponse> {
+    return this.client.executeTransactionBlock({
+      transactionBlock: txBytes,
+      signature,
+      options: {
+        showEffects: true,
+        showEvents: true,
+        showBalanceChanges: true,
+      },
+    });
+  }
+
+  /**
+   * Get explorer URL for a transaction digest.
+   */
+  getExplorerUrl(digest: string): string {
+    return `https://suiscan.xyz/${this.network}/tx/${digest}`;
   }
 }

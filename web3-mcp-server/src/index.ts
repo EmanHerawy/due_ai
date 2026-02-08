@@ -10,6 +10,7 @@ import { getSupportedChains, searchChains, getChainTokens } from "./tools/lifi-c
 import { getQuote, getRoutes, canBridge, getTransactionStatus, getQuoteDescription } from "./tools/lifi-quotes.js";
 import { getTokenPrice, getTokenPriceBySymbol, getCommonTokenPrices } from "./tools/lifi-portfolio.js";
 import { getGasPrice, compareGasPrices, estimateTransactionCost, getWalletBalances } from "./tools/lifi-gas.js";
+import { buildSuiTransfer, executeSignedTransaction } from "./tools/sui-transfer.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -546,6 +547,95 @@ server.registerTool(
     } catch (error) {
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: build_sui_transfer
+// ============================================================================
+server.registerTool(
+  "build_sui_transfer",
+  {
+    description:
+      "Build an unsigned SUI transfer transaction. Returns serialized transaction bytes for external signing, a human-readable payment summary, and gas estimate. Supports native SUI and other coin types.",
+    inputSchema: {
+      sender: z.string().describe("Sender's Sui wallet address (0x...)"),
+      recipient: z.string().describe("Recipient's Sui wallet address (0x...)"),
+      amount: z.string().describe("Amount to transfer in human-readable format (e.g., '1.5' for 1.5 SUI)"),
+      coinType: z.string().optional().describe("Full coin type path (e.g., '0x2::sui::SUI'). Defaults to native SUI"),
+      gasBudget: z.string().optional().describe("Optional gas budget in MIST"),
+    },
+  },
+  async ({ sender, recipient, amount, coinType, gasBudget }) => {
+    try {
+      const result = await buildSuiTransfer(suiClient, {
+        sender,
+        recipient,
+        amount,
+        coinType,
+        gasBudget,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: execute_sui_signed_tx
+// ============================================================================
+server.registerTool(
+  "execute_sui_signed_tx",
+  {
+    description:
+      "Execute a signed Sui transaction on the network. Accepts the base64-encoded transaction bytes and signature, submits to the Sui network, and returns the transaction digest, status, gas used, balance changes, and explorer link.",
+    inputSchema: {
+      txBytes: z.string().describe("Base64-encoded unsigned transaction bytes (from build_sui_transfer)"),
+      signature: z.string().describe("Base64-encoded signature (flag || signature || pubkey)"),
+    },
+  },
+  async ({ txBytes, signature }) => {
+    try {
+      const result = await executeSignedTransaction(suiClient, { txBytes, signature });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          },
+        ],
         isError: true,
       };
     }
