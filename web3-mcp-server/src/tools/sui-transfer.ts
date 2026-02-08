@@ -22,6 +22,7 @@ export interface BuildTransferRequest {
   amount: string; // Human-readable amount (e.g., "1.5")
   coinType?: string; // Full coin type path; defaults to SUI
   gasBudget?: string; // Optional gas budget in MIST
+  botUsername?: string; // Telegram bot username for signing URL
 }
 
 export interface GasEstimate {
@@ -43,9 +44,36 @@ export interface PaymentSummary {
   gasEstimate: GasEstimate;
 }
 
+export interface TransactionBreakdown {
+  type: string;
+  operations: Array<{
+    step: number;
+    action: string;
+    description: string;
+    details: Record<string, string>;
+  }>;
+  whatYouAreSigning: string;
+  whatThisCannotDo: string[];
+}
+
+export interface SecurityInfo {
+  verificationChecklist: string[];
+  riskLevel: 'low' | 'medium' | 'high';
+  riskExplanation: string;
+}
+
+export interface SigningInfo {
+  signingUrl: string;
+  startParam: string;
+  methods: string[];
+}
+
 export interface BuildTransferResponse {
   txBytes: string; // Base64-encoded unsigned transaction bytes
   paymentSummary: PaymentSummary;
+  transactionBreakdown: TransactionBreakdown;
+  securityInfo: SecurityInfo;
+  signingInfo: SigningInfo;
   message: string; // Human-readable summary for the user
 }
 
@@ -113,6 +141,110 @@ function parseGasFromEffects(effects: any): GasEstimate {
 }
 
 // ============================================================================
+// Educational Breakdown Helpers
+// ============================================================================
+
+export function buildTransactionBreakdown(
+  isNativeSui: boolean,
+  symbol: string,
+  amountFormatted: string,
+  sender: string,
+  recipient: string
+): TransactionBreakdown {
+  const senderShort = `${sender.slice(0, 8)}...${sender.slice(-4)}`;
+  const recipientShort = `${recipient.slice(0, 8)}...${recipient.slice(-4)}`;
+
+  const operations: TransactionBreakdown['operations'] = [];
+
+  if (isNativeSui) {
+    operations.push({
+      step: 1,
+      action: 'Split Coins',
+      description: `Split ${amountFormatted} ${symbol} from your gas coin`,
+      details: { amount: `${amountFormatted} ${symbol}`, from: senderShort },
+    });
+    operations.push({
+      step: 2,
+      action: 'Transfer Objects',
+      description: `Send the split coin to ${recipientShort}`,
+      details: { to: recipientShort },
+    });
+  } else {
+    operations.push({
+      step: 1,
+      action: 'Merge Coins',
+      description: `Merge all ${symbol} coins into one object`,
+      details: { token: symbol },
+    });
+    operations.push({
+      step: 2,
+      action: 'Split Coins',
+      description: `Split ${amountFormatted} ${symbol} from merged coin`,
+      details: { amount: `${amountFormatted} ${symbol}` },
+    });
+    operations.push({
+      step: 3,
+      action: 'Transfer Objects',
+      description: `Send the split coin to ${recipientShort}`,
+      details: { to: recipientShort },
+    });
+  }
+
+  return {
+    type: isNativeSui ? 'Native SUI Transfer' : `${symbol} Token Transfer`,
+    operations,
+    whatYouAreSigning: `Transfer ${amountFormatted} ${symbol} from your wallet to ${recipientShort}`,
+    whatThisCannotDo: [
+      'Access your other tokens or objects',
+      'Approve future transactions on your behalf',
+      'Change your account permissions or ownership',
+      'Interact with any smart contract beyond the transfer',
+    ],
+  };
+}
+
+export function buildSecurityInfo(
+  sender: string,
+  recipient: string,
+  amountFormatted: string,
+  symbol: string,
+  network: string
+): SecurityInfo {
+  return {
+    verificationChecklist: [
+      `Recipient address: ${recipient}`,
+      `Amount: ${amountFormatted} ${symbol}`,
+      `Network: ${network}`,
+      `Sender (your wallet): ${sender}`,
+    ],
+    riskLevel: 'low',
+    riskExplanation:
+      'Simple token transfer — no smart contract interaction, no approvals. This is the safest type of transaction.',
+  };
+}
+
+export function encodeSigningIntent(
+  sender: string,
+  recipient: string,
+  amount: string,
+  coinType: string,
+  network: string
+): string {
+  const intent = JSON.stringify({
+    s: sender,
+    r: recipient,
+    a: amount,
+    c: coinType,
+    n: network,
+  });
+  return Buffer.from(intent).toString('base64url');
+}
+
+export function getSigningUrl(startParam: string, botUsername: string): string {
+  return `https://t.me/${botUsername}/sign?startapp=${startParam}`;
+}
+
+// ============================================================================
 // Tool Functions
 // ============================================================================
 
@@ -124,7 +256,7 @@ export async function buildSuiTransfer(
   client: DueAiSuiClient,
   request: BuildTransferRequest
 ): Promise<BuildTransferResponse> {
-  const { sender, recipient, amount, gasBudget } = request;
+  const { sender, recipient, amount, gasBudget, botUsername } = request;
   const coinType = request.coinType || SUI_COIN_TYPE;
   const symbol = extractSymbol(coinType);
   const decimals = TOKEN_DECIMALS[symbol] || 9;
@@ -178,15 +310,37 @@ export async function buildSuiTransfer(
     gasEstimate,
   };
 
+  // Educational breakdown
+  const transactionBreakdown = buildTransactionBreakdown(
+    isNativeSui, symbol, amountFormatted, sender, recipient
+  );
+
+  // Security info
+  const securityInfo = buildSecurityInfo(sender, recipient, amountFormatted, symbol, network);
+
+  // Signing info
+  const resolvedBotUsername = botUsername || process.env.TELEGRAM_BOT_USERNAME || '';
+  const startParam = encodeSigningIntent(sender, recipient, amount, coinType, network);
+  const signingUrl = resolvedBotUsername ? getSigningUrl(startParam, resolvedBotUsername) : '';
+
+  const signingInfo: SigningInfo = {
+    signingUrl,
+    startParam,
+    methods: ['zklogin_google', 'walletconnect'],
+  };
+
   const message =
     `Transfer ${amountFormatted} ${symbol} from ${sender.slice(0, 8)}...${sender.slice(-4)} ` +
     `to ${recipient.slice(0, 8)}...${recipient.slice(-4)} on ${network}. ` +
-    `Estimated gas: ${gasEstimate.totalGasCostFormatted}. ` +
-    `Please sign the transaction bytes to proceed.`;
+    `Estimated gas: ${gasEstimate.totalGasCostFormatted}.` +
+    (signingUrl ? ` Tap "Sign Now" to sign securely.` : ` Please sign the transaction bytes to proceed.`);
 
   return {
     txBytes,
     paymentSummary,
+    transactionBreakdown,
+    securityInfo,
+    signingInfo,
     message,
   };
 }

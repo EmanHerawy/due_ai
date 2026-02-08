@@ -61,6 +61,14 @@ case "$MODEL_PROVIDER" in
         fi
         echo "[ok] Provider: Google ($OPENCLAW_MODEL)"
         ;;
+    xai)
+        if [ -z "$GROK_API_KEY" ]; then
+            echo "ERROR: OPENCLAW_MODEL=$OPENCLAW_MODEL requires GROK_API_KEY in .env"
+            exit 1
+        fi
+        XAI_ENABLED="true"
+        echo "[ok] Provider: xAI ($OPENCLAW_MODEL)"
+        ;;
     ollama)
         OLLAMA_HOST="${OLLAMA_HOST:-http://host.docker.internal:11434}"
         OLLAMA_ENABLED="true"
@@ -144,18 +152,36 @@ else
     echo "     To pair later: docker compose run --rm openclaw-cli channels login"
 fi
 
-# --- Build optional models block (only for custom providers like Ollama) ---
-MODELS_BLOCK=""
+# --- Build optional models block (only for custom providers like Ollama, xAI) ---
+CUSTOM_PROVIDERS=""
+
 if [ "$OLLAMA_ENABLED" = "true" ]; then
     OLLAMA_MODEL_NAME=$(echo "$OPENCLAW_MODEL" | cut -d'/' -f2-)
-    MODELS_BLOCK="\"models\": {
-    \"providers\": {
-      \"ollama\": {
+    CUSTOM_PROVIDERS="${CUSTOM_PROVIDERS:+$CUSTOM_PROVIDERS,
+      }\"ollama\": {
         \"api\": \"openai-completions\",
         \"baseUrl\": \"${OLLAMA_HOST}/v1\",
         \"apiKey\": \"ollama\",
         \"models\": [{\"id\": \"$OLLAMA_MODEL_NAME\", \"name\": \"$OLLAMA_MODEL_NAME\"}]
-      }
+      }"
+fi
+
+if [ "$XAI_ENABLED" = "true" ]; then
+    XAI_MODEL_NAME=$(echo "$OPENCLAW_MODEL" | cut -d'/' -f2-)
+    CUSTOM_PROVIDERS="${CUSTOM_PROVIDERS:+$CUSTOM_PROVIDERS,
+      }\"xai\": {
+        \"api\": \"openai-completions\",
+        \"baseUrl\": \"https://api.x.ai/v1\",
+        \"apiKey\": \"$GROK_API_KEY\",
+        \"models\": [{\"id\": \"$XAI_MODEL_NAME\", \"name\": \"$XAI_MODEL_NAME\"}]
+      }"
+fi
+
+MODELS_BLOCK=""
+if [ -n "$CUSTOM_PROVIDERS" ]; then
+    MODELS_BLOCK="\"models\": {
+    \"providers\": {
+      $CUSTOM_PROVIDERS
     }
   },"
 fi

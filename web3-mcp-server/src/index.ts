@@ -577,6 +577,7 @@ server.registerTool(
         amount,
         coinType,
         gasBudget,
+        botUsername: process.env.TELEGRAM_BOT_USERNAME,
       });
       return {
         content: [

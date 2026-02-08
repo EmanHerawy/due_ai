@@ -4,6 +4,10 @@ import {
   executeSignedTransaction,
   extractSymbol,
   toSmallestUnit,
+  buildTransactionBreakdown,
+  buildSecurityInfo,
+  encodeSigningIntent,
+  getSigningUrl,
 } from '../src/tools/sui-transfer.js';
 import type { DueAiSuiClient } from '../src/clients/sui-client.js';
 
@@ -49,6 +53,83 @@ describe('toSmallestUnit', () => {
 
   it('should handle zero', () => {
     expect(toSmallestUnit('0', 9)).toBe(BigInt(0));
+  });
+});
+
+// ============================================================================
+// buildTransactionBreakdown tests
+// ============================================================================
+
+describe('buildTransactionBreakdown', () => {
+  it('should return 2 operations for native SUI transfer', () => {
+    const result = buildTransactionBreakdown(true, 'SUI', '1.5', '0xaaaa', '0xbbbb');
+    expect(result.type).toBe('Native SUI Transfer');
+    expect(result.operations).toHaveLength(2);
+    expect(result.operations[0].action).toBe('Split Coins');
+    expect(result.operations[1].action).toBe('Transfer Objects');
+  });
+
+  it('should return 3 operations for token transfer', () => {
+    const result = buildTransactionBreakdown(false, 'USDC', '100', '0xaaaa', '0xbbbb');
+    expect(result.type).toBe('USDC Token Transfer');
+    expect(result.operations).toHaveLength(3);
+    expect(result.operations[0].action).toBe('Merge Coins');
+    expect(result.operations[1].action).toBe('Split Coins');
+    expect(result.operations[2].action).toBe('Transfer Objects');
+  });
+
+  it('should include whatThisCannotDo list', () => {
+    const result = buildTransactionBreakdown(true, 'SUI', '1', '0xaaaa', '0xbbbb');
+    expect(result.whatThisCannotDo.length).toBeGreaterThan(0);
+    expect(result.whatThisCannotDo).toContain('Access your other tokens or objects');
+  });
+
+  it('should include whatYouAreSigning summary', () => {
+    const result = buildTransactionBreakdown(true, 'SUI', '2.5', '0xaaaa1234', '0xbbbb5678');
+    expect(result.whatYouAreSigning).toContain('2.5 SUI');
+  });
+});
+
+// ============================================================================
+// buildSecurityInfo tests
+// ============================================================================
+
+describe('buildSecurityInfo', () => {
+  it('should return low risk for simple transfers', () => {
+    const result = buildSecurityInfo('0xaaaa', '0xbbbb', '1.5', 'SUI', 'testnet');
+    expect(result.riskLevel).toBe('low');
+  });
+
+  it('should include verification checklist with recipient, amount, and network', () => {
+    const result = buildSecurityInfo('0xaaaa', '0xbbbb', '1.5', 'SUI', 'testnet');
+    expect(result.verificationChecklist.length).toBeGreaterThanOrEqual(3);
+    const joined = result.verificationChecklist.join(' ');
+    expect(joined).toContain('0xbbbb');
+    expect(joined).toContain('1.5 SUI');
+    expect(joined).toContain('testnet');
+  });
+});
+
+// ============================================================================
+// encodeSigningIntent + getSigningUrl tests
+// ============================================================================
+
+describe('encodeSigningIntent', () => {
+  it('should produce valid base64url that decodes to correct intent', () => {
+    const encoded = encodeSigningIntent('0xsender', '0xrecipient', '1.5', '0x2::sui::SUI', 'testnet');
+    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString());
+    expect(decoded.s).toBe('0xsender');
+    expect(decoded.r).toBe('0xrecipient');
+    expect(decoded.a).toBe('1.5');
+    expect(decoded.c).toBe('0x2::sui::SUI');
+    expect(decoded.n).toBe('testnet');
+  });
+});
+
+describe('getSigningUrl', () => {
+  it('should build correct URL format', () => {
+    const url = getSigningUrl('abc123', 'my_bot');
+    expect(url).toBe('https://t.me/my_bot/sign?startapp=abc123');
   });
 });
 
@@ -99,12 +180,40 @@ describe('buildSuiTransfer', () => {
     expect(result.paymentSummary.gasEstimate.totalGasCost).toBe('2500000');
     expect(result.message).toContain('1.5 SUI');
 
+    // Transaction breakdown
+    expect(result.transactionBreakdown.type).toBe('Native SUI Transfer');
+    expect(result.transactionBreakdown.operations).toHaveLength(2);
+    expect(result.transactionBreakdown.whatThisCannotDo.length).toBeGreaterThan(0);
+
+    // Security info
+    expect(result.securityInfo.riskLevel).toBe('low');
+    expect(result.securityInfo.verificationChecklist.length).toBeGreaterThanOrEqual(3);
+
+    // Signing info
+    expect(result.signingInfo.startParam).toBeTruthy();
+    expect(result.signingInfo.methods).toContain('zklogin_google');
+    expect(result.signingInfo.methods).toContain('walletconnect');
+    // No bot username set, so signingUrl should be empty
+    expect(result.signingInfo.signingUrl).toBe('');
+
     expect(mockClient.buildSuiTransfer).toHaveBeenCalledWith(
       '0xaaaa',
       '0xbbbb',
       BigInt('1500000000'),
       undefined
     );
+  });
+
+  it('should include signingUrl when botUsername is provided', async () => {
+    const result = await buildSuiTransfer(mockClient as DueAiSuiClient, {
+      sender: '0xaaaa',
+      recipient: '0xbbbb',
+      amount: '1.5',
+      botUsername: 'my_test_bot',
+    });
+
+    expect(result.signingInfo.signingUrl).toContain('https://t.me/my_test_bot/sign?startapp=');
+    expect(result.message).toContain('Sign Now');
   });
 
   it('should build a non-SUI coin transfer', async () => {
@@ -117,6 +226,8 @@ describe('buildSuiTransfer', () => {
 
     expect(result.paymentSummary.symbol).toBe('USDC');
     expect(result.paymentSummary.coinType).toBe('0xabcd::usdc::USDC');
+    expect(result.transactionBreakdown.type).toBe('USDC Token Transfer');
+    expect(result.transactionBreakdown.operations).toHaveLength(3);
     expect(mockClient.buildCoinTransfer).toHaveBeenCalledWith(
       '0xaaaa',
       '0xbbbb',
